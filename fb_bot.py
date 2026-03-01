@@ -18,27 +18,32 @@ FB_PAGE_ID = os.getenv('FB_PAGE_ID', 'YOUR_PAGE_ID')
 
 def send_fb_message(sender_id, message_text):
     """
-    TODO: Implement Facebook Graph API call to send message.
+    Send a message to a Facebook user via Graph API.
     
     Graph API endpoint: POST https://graph.facebook.com/v18.0/me/messages
-    Parameters:
-    - access_token: FB_PAGE_ACCESS_TOKEN
-    - recipient: {"id": sender_id}
-    - message: {"text": message_text}
-    
-    Example using requests:
-    ```python
+    """
     import requests
+    
     url = f"https://graph.facebook.com/v18.0/me/messages?access_token={FB_PAGE_ACCESS_TOKEN}"
+    
     data = {
         "recipient": {"id": sender_id},
         "message": {"text": message_text}
     }
-    response = requests.post(url, json=data)
-    ```
-    """
-    logger.info(f"[FB SKELETON] Would send to {sender_id}: {message_text}")
-    return True
+    
+    try:
+        response = requests.post(url, json=data, timeout=10)
+        
+        if response.status_code != 200:
+            logger.error(f"Failed to send FB message: {response.text}")
+            return False
+        
+        logger.info(f"Message sent to {sender_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error sending FB message: {e}")
+        return False
 
 
 def get_fb_sender_id(payload):
