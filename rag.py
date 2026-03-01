@@ -141,6 +141,14 @@ class RAGSystem:
             return {"response": f"Error processing your query: {str(e)}"}, 500
     
     def load_documents(self):
+        # Clear existing vector store first
+        if self.vector_store:
+            try:
+                self.vector_store.delete_collection()
+            except:
+                pass
+            self.vector_store = None
+        
         if not os.path.exists(self.upload_folder):
             return []
         
