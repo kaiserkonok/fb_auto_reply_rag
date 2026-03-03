@@ -12,6 +12,10 @@ import requests
 from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template_string, request, url_for
 
+from ai_engine import generate_ai_reply
+from database import Database
+from flow_controller import determine_next_stage
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -177,7 +181,31 @@ def _process_event(event: dict[str, Any], cfg: dict[str, Any]) -> None:
     if message.get("is_echo"):
         return
 
-    reply = _forward_to_local_bot(sender_id, text, cfg)
+    try:
+        db: Database = cfg["database"]
+        user = db.get_or_create_user(facebook_id=sender_id, initial_stage="greeting")
+        user_id = int(user["id"])
+
+        db.save_message(user_id=user_id, role="user", message_text=text)
+        conversation_history = db.get_recent_messages(user_id=user_id, limit=10)
+
+        current_stage = str(user.get("current_stage", "greeting"))
+        next_stage = determine_next_stage(current_stage=current_stage, user_message=text)
+        if next_stage != current_stage:
+            db.set_user_stage(user_id=user_id, new_stage=next_stage)
+        else:
+            db.touch_user(user_id=user_id)
+
+        reply = generate_ai_reply(
+            stage=next_stage,
+            conversation_history=conversation_history,
+            user_message=text,
+        )
+        db.save_message(user_id=user_id, role="assistant", message_text=reply)
+    except Exception:
+        logger.exception("Stateful AI processing failed; falling back to local bot.")
+        reply = _forward_to_local_bot(sender_id, text, cfg)
+
     _send_message(
         page_access_token=cfg["page_access_token"],
         api_version=cfg["graph_api_version"],
@@ -192,6 +220,9 @@ def create_app() -> Flask:
 
     flask_app = Flask(__name__)
     config_store = ConfigStore(os.getenv("APP_CONFIG_FILE", "config.json"))
+    database = Database(os.getenv("SQLITE_DB_PATH", "data/conversations.db"))
+    database.init_db()
+
     cfg = {
         "verify_token": os.getenv("FB_VERIFY_TOKEN", ""),
         "page_access_token": os.getenv("FB_PAGE_ACCESS_TOKEN", ""),
@@ -200,6 +231,7 @@ def create_app() -> Flask:
         "timeout_seconds": int(os.getenv("WEBHOOK_TIMEOUT_SECONDS", "10")),
         "local_api_key": os.getenv("LOCAL_API_KEY", ""),
         "config_store": config_store,
+        "database": database,
     }
     pool = ThreadPoolExecutor(max_workers=8)
 
