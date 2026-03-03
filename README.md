@@ -1,135 +1,242 @@
-# RAG Chat Bot
+# Open Source Community Reply
 
-A Facebook Page bot with RAG (Retrieval-Augmented Generation) capabilities. Uses local LLMs via Ollama.
+Flask-based Facebook Messenger webhook app that can forward replies to a local bot (`local_fun_bot.py`) and includes:
 
-## Features
+- A homepage control panel (`/`) with a live reply tester
+- Runtime settings page (`/settings`) to store ngrok URL
+- Privacy policy page (`/privacy-policy`) for Meta app review
+- Messenger webhook endpoints (`/webhook` GET and POST)
 
-- **RAG-powered Q&A** - Answers questions from uploaded documents
-- **Multi-format support** - TXT, PDF, DOCX, CSV
-- **Multi-user memory** - Each Facebook user gets persistent conversation history
-- **Folder upload** - Upload entire folders at once
-- **Query refinement** - Understands follow-up questions ("he" → previous subject)
-- **Facebook Messenger integration** - Webhook skeleton ready
+## Architecture
 
-## Requirements
+This repo uses two apps:
 
-- Python 3.12+
-- Ollama running locally
+1. `wsgi.py` (main app, usually on Render, default port `5000`)
+2. `local_fun_bot.py` (local reply engine, default port `5001`)
 
-## Quick Start
+Flow:
 
-### 1. Install Ollama
+1. Messenger event hits `wsgi.py` on `/webhook`
+2. `wsgi.py` forwards message to `local_fun_bot.py` on `/process-message`
+3. `local_fun_bot.py` returns a reply
+4. `wsgi.py` sends the reply back through Facebook Graph API
 
-```bash
-# macOS/Linux
-curl -fsSL https://ollama.com/install.sh | sh
+The homepage tester (`POST /chat/reply`) uses the same forwarding logic.
 
-# Start Ollama
-ollama serve
+## Key Files
 
-# Pull required models
-ollama pull qwen2.5:3b
-ollama pull bge-m3:latest
+- `wsgi.py`: main web app, webhook, homepage, settings, privacy policy
+- `local_fun_bot.py`: local message processor (`POST /process-message`)
+- `.env.example`: base environment template
+- `render.yaml` and `Procfile`: Render/Gunicorn deployment config
+
+## Prerequisites
+
+- Python 3.10+ (project currently tested with Python 3.14)
+- `pip`
+- Meta Developer app + Facebook Page (for real Messenger traffic)
+- `ngrok` (only needed if Render should call your local machine)
+
+## Environment Variables
+
+Create `.env` from `.env.example`, then add these:
+
+```env
+PORT=5000
+LOG_LEVEL=INFO
+
+FB_VERIFY_TOKEN=your_verify_token
+FB_PAGE_ACCESS_TOKEN=your_page_access_token
+FB_APP_SECRET=your_app_secret_optional
+FB_GRAPH_API_VERSION=v20.0
+
+WEBHOOK_TIMEOUT_SECONDS=10
+DEFAULT_REPLY=Thanks for your message. We will get back to you shortly.
+
+LOCAL_API_KEY=use_the_same_secret_in_both_apps
+LOCAL_FUN_BOT_URL=
+APP_CONFIG_FILE=config.json
+
+PRIVACY_POLICY_NAME=Open Source Community Reply Privacy Policy
+PRIVACY_CONTACT_EMAIL=zrliqi9224@gmail.com
 ```
 
-### 2. Setup Python Environment
+Notes:
 
-```bash
-# Create virtual environment
+- `LOCAL_API_KEY` must match in both `wsgi.py` and `local_fun_bot.py`.
+- `LOCAL_FUN_BOT_URL` is optional. If unset in `development`, `wsgi.py` auto-tries:
+  - `http://127.0.0.1:5001`
+  - `http://localhost:5001`
+- `NGROK_BASE_URL` is saved from `/settings` into `config.json` at runtime.
+
+## Local Setup (Windows PowerShell)
+
+1. Create and activate virtual environment:
+
+```powershell
+cd C:\Users\manis\PycharmProjects\fb_auto_reply_rag
 python -m venv .venv
-
-# Activate
-source .venv/bin/activate  # Linux/Mac
-.venv\Scripts\activate     # Windows
-
-# Install dependencies
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-### 3. Configure Environment
+2. Create `.env` and fill values:
 
-```bash
-# Copy environment template
-cp .env.example .env
-
-# Edit .env (optional - for Facebook integration)
+```powershell
+Copy-Item .env.example .env
 ```
 
-### 4. Run the Application
+3. Start `local_fun_bot.py` in Terminal A:
 
-```bash
-python app.py
+```powershell
+$env:LOCAL_API_KEY="your_shared_local_api_key"
+$env:FLASK_APP="local_fun_bot.py"
+& "C:\Program Files\Python314\python.exe" -m flask run --host 0.0.0.0 --port 5001
 ```
 
-Open http://localhost:5000 in your browser.
+4. Start `wsgi.py` in Terminal B:
 
----
-
-## Usage
-
-### Web Interface
-
-1. **Chat** - Ask questions about your documents
-2. **Documents** - Upload files, click "Update KB" after uploading
-
-### Facebook Integration (Optional)
-
-1. Create app at [developers.facebook.com](https://developers.facebook.com)
-2. Add Messenger product
-3. Get Page Access Token
-4. Edit `.env` with your credentials
-5. Configure webhook URL (use ngrok for local testing)
-6. See [FACEBOOK_SETUP.md](FACEBOOK_SETUP.md) for detailed instructions
-
----
-
-## Project Structure
-
-```
-├── app.py          # Flask web routes
-├── rag.py          # RAG engine
-├── fb_bot.py       # Facebook webhook
-├── requirements.txt # Dependencies
-├── .env.example    # Environment template
-├── .gitignore      # Git ignore rules
-└── uploads/        # Uploaded documents
+```powershell
+$env:FLASK_ENV="development"
+$env:LOCAL_API_KEY="your_shared_local_api_key"
+$env:FLASK_APP="wsgi.py"
+& "C:\Program Files\Python314\python.exe" -m flask run --host 0.0.0.0 --port 5000
 ```
 
----
+5. Open local URLs:
 
-## Commands
+- Home: `http://127.0.0.1:5000/`
+- Settings: `http://127.0.0.1:5000/settings`
+- Privacy policy: `http://127.0.0.1:5000/privacy-policy`
 
-```bash
-# Run the app
-python app.py
+## Run Locally Only (No Render Server)
 
-# Update knowledge base (after uploading files)
-# Click "Update KB" button in UI or POST to /api/reload
-curl -X POST http://localhost:5000/api/reload
+Use these 3 terminals when you want local development only.
+
+1. Terminal A: run `local_fun_bot.py` on port `5001`
+
+```powershell
+cd C:\Users\manis\PycharmProjects\fb_auto_reply_rag
+$key = (Get-Content .env | Where-Object { $_ -match '^LOCAL_API_KEY=' } | Select-Object -First 1).Split('=',2)[1]
+$env:LOCAL_API_KEY = $key
+python .\local_fun_bot.py
 ```
 
----
+2. Terminal B: run `wsgi.py` on port `5000`
+
+```powershell
+cd C:\Users\manis\PycharmProjects\fb_auto_reply_rag
+$env:FLASK_ENV = "development"
+python -m flask --app wsgi.py run --host 0.0.0.0 --port 5000
+```
+
+3. Terminal C (optional): expose local bot with ngrok
+
+```powershell
+ngrok http 5001
+```
+
+If you do not need external webhook traffic, skip Terminal C.
+
+## Test the Local Bot Directly
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:5001/process-message `
+  -Headers @{ "X-LOCAL-API-KEY"="your_shared_local_api_key" } `
+  -ContentType "application/json" `
+  -Body '{"sender_id":"123","message":"hi"}'
+```
+
+Expected: JSON with a `reply` field.
+
+## ngrok Setup (for Render -> local_fun_bot bridge)
+
+Run in a separate terminal:
+
+```powershell
+ngrok http 5001
+```
+
+Copy the HTTPS URL (example: `https://abcd-1234.ngrok-free.app`), then:
+
+1. Open your deployed app settings page: `https://<your-render-domain>/settings`
+2. Save that ngrok URL as `NGROK_BASE_URL`
+3. Ensure Render env var `LOCAL_API_KEY` matches local bot `LOCAL_API_KEY`
+
+## Render Deployment
+
+1. Push repo to GitHub.
+2. Create a Render Web Service.
+3. Configure:
+   - Build command: `pip install -r requirements.txt`
+   - Start command: `gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120`
+4. Add env vars in Render dashboard:
+   - `FB_VERIFY_TOKEN`
+   - `FB_PAGE_ACCESS_TOKEN`
+   - `FB_APP_SECRET` (recommended)
+   - `LOCAL_API_KEY`
+   - `PRIVACY_CONTACT_EMAIL` (optional override)
+5. Deploy.
+
+## Production URLs (Render)
+
+If your domain is `https://fb-auto-reply-rag.onrender.com`:
+
+- Home: `https://fb-auto-reply-rag.onrender.com/`
+- Privacy policy: `https://fb-auto-reply-rag.onrender.com/privacy-policy`
+- Settings: `https://fb-auto-reply-rag.onrender.com/settings`
+- Webhook: `https://fb-auto-reply-rag.onrender.com/webhook`
+
+## Meta Messenger Configuration
+
+In Meta Developers -> Messenger -> Webhooks:
+
+1. Callback URL: `https://<your-render-domain>/webhook`
+2. Verify Token: exact same `FB_VERIFY_TOKEN` value
+3. Subscribe fields:
+   - `messages`
+   - `messaging_postbacks`
+4. Subscribe your Facebook Page to the app
+
+For app review:
+
+- Privacy policy URL: `https://<your-render-domain>/privacy-policy`
+
+## Endpoints
+
+- `GET /`: homepage menu + live tester UI
+- `POST /chat/reply`: homepage tester reply API
+- `GET /settings`: ngrok URL settings page
+- `POST /settings`: save ngrok base URL
+- `GET /privacy-policy`: privacy policy page
+- `GET /privacy`: privacy alias
+- `GET /health`: health check
+- `GET /webhook`: Meta verify token callback
+- `POST /webhook`: Messenger event receiver
+- `POST /process-message` (in `local_fun_bot.py`): local reply endpoint
 
 ## Troubleshooting
 
-### No documents loaded
-- Upload files to `uploads/` folder
-- Click "Update KB" button
+1. `401 Unauthorized` on `/process-message`
+   - `LOCAL_API_KEY` missing in local bot process, or key mismatch.
+   - Restart both apps after changing env vars.
 
-### Model not found
-```bash
-ollama list
-ollama pull qwen2.5:3b
-ollama pull bge-m3:latest
-```
+2. Homepage tester shows echo (`I received: ...`) instead of fun replies
+   - `local_fun_bot.py` is not reachable.
+   - Start local bot on `5001` or set `LOCAL_FUN_BOT_URL`.
 
-### Facebook webhook not working
-- Use ngrok: `ngrok http 5000`
-- Configure webhook URL in Facebook Developer Console
-- Verify token must match `FB_VERIFY_TOKEN` in `.env`
+3. ngrok shows `401` for `/process-message`
+   - Render `LOCAL_API_KEY` does not match local bot `LOCAL_API_KEY`.
 
----
+4. Meta webhook verification returns `403`
+   - `FB_VERIFY_TOKEN` in Render does not match token entered in Meta console.
 
-## License
+5. Messages received but no reply in Messenger
+   - Check `FB_PAGE_ACCESS_TOKEN`.
+   - Check app logs for Graph API errors.
 
-MIT License - see [LICENSE](LICENSE) file.
+## Security Notes
+
+- Never commit real access tokens or API keys.
+- Rotate any secret that was exposed.
+- Use strong random values for `LOCAL_API_KEY`.
