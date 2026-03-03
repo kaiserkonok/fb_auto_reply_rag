@@ -196,6 +196,54 @@ def create_app() -> Flask:
     def health():
         return jsonify({"status": "ok"}), 200
 
+    @flask_app.get("/privacy-policy")
+    @flask_app.get("/privacy")
+    def privacy_policy():
+        policy_name = os.getenv("PRIVACY_POLICY_NAME", "FB Auto Reply Bot Privacy Policy")
+        contact_email = os.getenv("PRIVACY_CONTACT_EMAIL", "support@example.com")
+        html = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>{{ policy_name }}</title>
+            <style>
+                body { font-family: Arial, sans-serif; max-width: 820px; margin: 32px auto; padding: 0 16px; line-height: 1.5; color: #111; }
+                h1, h2 { line-height: 1.25; }
+                .muted { color: #555; }
+                .card { border: 1px solid #ddd; border-radius: 8px; padding: 20px; }
+                code { background: #f5f5f5; padding: 2px 6px; border-radius: 4px; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h1>{{ policy_name }}</h1>
+                <p class="muted">Last updated: March 3, 2026</p>
+
+                <h2>1. What we collect</h2>
+                <p>When you message our Facebook Page, we process your Messenger sender ID and message content so the bot can generate a reply.</p>
+
+                <h2>2. How we use data</h2>
+                <p>We use this data only to provide automated replies and to operate, monitor, and improve the bot service.</p>
+
+                <h2>3. Data sharing</h2>
+                <p>We do not sell personal data. Data may be processed by service providers required to run this bot, such as Meta and our hosting infrastructure.</p>
+
+                <h2>4. Data retention</h2>
+                <p>We keep data only as long as needed for bot operations, reliability, and legal obligations. We aim to minimize stored data.</p>
+
+                <h2>5. Data deletion requests</h2>
+                <p>To request deletion of your data, email <a href="mailto:{{ contact_email }}">{{ contact_email }}</a> with your Page conversation details so we can locate the records.</p>
+
+                <h2>6. Contact</h2>
+                <p>Privacy questions can be sent to <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>.</p>
+            </div>
+        </body>
+        </html>
+        """
+        return render_template_string(html, policy_name=policy_name, contact_email=contact_email), 200
+
     @flask_app.get("/settings")
     def settings_page():
         # Small in-app admin page for runtime ngrok forwarding configuration.
