@@ -190,7 +190,36 @@ def create_app() -> Flask:
 
     @flask_app.get("/")
     def root():
-        return jsonify({"service": "facebook-messenger-bot", "status": "running"}), 200
+        html = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>Bot Menu</title>
+            <style>
+                body { font-family: Arial, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; color: #111; }
+                .card { border: 1px solid #ddd; border-radius: 8px; padding: 20px; }
+                .muted { color: #555; }
+                .menu { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+                .menu a { text-decoration: none; border: 1px solid #ddd; border-radius: 8px; padding: 10px 14px; color: #111; }
+                .menu a:hover { background: #f7f7f7; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h1>Facebook Messenger Bot</h1>
+                <p class="muted">Service status: running</p>
+                <div class="menu">
+                    <a href="{{ url_for('settings_page') }}">Settings</a>
+                    <a href="{{ url_for('privacy_policy') }}">Privacy Policy</a>
+                    <a href="{{ url_for('health') }}">Health</a>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return render_template_string(html), 200
 
     @flask_app.get("/health")
     def health():
@@ -213,10 +242,18 @@ def create_app() -> Flask:
                 h1, h2 { line-height: 1.25; }
                 .muted { color: #555; }
                 .card { border: 1px solid #ddd; border-radius: 8px; padding: 20px; }
+                .nav { margin-bottom: 14px; }
+                .nav a { color: #111; margin-right: 14px; text-decoration: none; }
+                .nav a:hover { text-decoration: underline; }
                 code { background: #f5f5f5; padding: 2px 6px; border-radius: 4px; }
             </style>
         </head>
         <body>
+            <div class="nav">
+                <a href="{{ url_for('root') }}">Home</a>
+                <a href="{{ url_for('settings_page') }}">Settings</a>
+                <a href="{{ url_for('privacy_policy') }}">Privacy Policy</a>
+            </div>
             <div class="card">
                 <h1>{{ policy_name }}</h1>
                 <p class="muted">Last updated: March 3, 2026</p>
@@ -260,6 +297,9 @@ def create_app() -> Flask:
             <style>
                 body { font-family: Arial, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; }
                 .card { border: 1px solid #ddd; border-radius: 8px; padding: 20px; }
+                .nav { margin-bottom: 14px; }
+                .nav a { color: #111; margin-right: 14px; text-decoration: none; }
+                .nav a:hover { text-decoration: underline; }
                 input { width: 100%; padding: 10px; margin: 8px 0 14px; box-sizing: border-box; }
                 button { padding: 10px 16px; }
                 .ok { color: #0a7a31; }
@@ -268,6 +308,11 @@ def create_app() -> Flask:
             </style>
         </head>
         <body>
+            <div class="nav">
+                <a href="{{ url_for('root') }}">Home</a>
+                <a href="{{ url_for('settings_page') }}">Settings</a>
+                <a href="{{ url_for('privacy_policy') }}">Privacy Policy</a>
+            </div>
             <div class="card">
                 <h2>Local Bot URL Settings</h2>
                 {% if status %}<p class="ok">{{ status }}</p>{% endif %}
