@@ -109,6 +109,35 @@ $env:FLASK_APP="wsgi.py"
 - Settings: `http://127.0.0.1:5000/settings`
 - Privacy policy: `http://127.0.0.1:5000/privacy-policy`
 
+## Run Locally Only (No Render Server)
+
+Use these 3 terminals when you want local development only.
+
+1. Terminal A: run `local_fun_bot.py` on port `5001`
+
+```powershell
+cd C:\Users\manis\PycharmProjects\fb_auto_reply_rag
+$key = (Get-Content .env | Where-Object { $_ -match '^LOCAL_API_KEY=' } | Select-Object -First 1).Split('=',2)[1]
+$env:LOCAL_API_KEY = $key
+python .\local_fun_bot.py
+```
+
+2. Terminal B: run `wsgi.py` on port `5000`
+
+```powershell
+cd C:\Users\manis\PycharmProjects\fb_auto_reply_rag
+$env:FLASK_ENV = "development"
+python -m flask --app wsgi.py run --host 0.0.0.0 --port 5000
+```
+
+3. Terminal C (optional): expose local bot with ngrok
+
+```powershell
+ngrok http 5001
+```
+
+If you do not need external webhook traffic, skip Terminal C.
+
 ## Test the Local Bot Directly
 
 ```powershell
