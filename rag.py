@@ -44,7 +44,7 @@ def init_memory_db():
 
 
 class RAGSystem:
-    def __init__(self, upload_folder='uploads', llm_model="qwen3.5:2b", embed_model="bge-m3:latest", max_token_limit=2000):
+    def __init__(self, upload_folder='uploads', llm_model="qwen2.5:3b", embed_model="embeddinggemma", max_token_limit=2000):
         self.upload_folder = upload_folder
         self.embeddings = OllamaEmbeddings(model=embed_model)
         self.vector_store = None
@@ -159,17 +159,22 @@ class RAGSystem:
             logger.debug(f"USER: {message}")
             logger.debug(f"{'='*50}")
 
-            # Retrieval - using MMR for better diversity
+            # Check if message needs RAG (not a simple greeting/casual message)
+            message_lower = message.lower().strip()
+            simple_queries = ['hi', 'hello', 'hey', 'ok', 'thanks', 'thank you', 'good', 'nice', 'cool', 'okay', 'sure', 'yes', 'no']
+            needs_rag = not any(message_lower == q or message_lower.startswith(q + ' ') for q in simple_queries)
+
+            # Retrieval - using MMR for better diversity (only if needed)
             context_section = ""
             retrieved_docs = []
-            if self.vector_store:
+            if self.vector_store and needs_rag:
                 logger.debug(f"\n🔍 SEARCHING for: '{message}'")
                 
                 # Use MMR (Maximum Marginal Relevance) for better results
                 docs = self.vector_store.max_marginal_relevance_search(
                     message, 
-                    k=5,  # Increased from 3 to 5
-                    fetch_k=10  # Fetch more for diversity
+                    k=5,
+                    fetch_k=10
                 )
                 logger.debug(f"📄 FOUND {len(docs)} documents")
                 
@@ -182,6 +187,8 @@ class RAGSystem:
                     context_section = "\n\nRelevant information from documents:\n" + "\n".join(
                         f"[Document {i+1}]:\n{doc.page_content}" for i, doc in enumerate(docs)
                     )
+            else:
+                logger.debug(f"⏭️ SKIPPING RAG for simple message")
 
             # Build improved prompt
             prompt = f"""You are a helpful assistant for "Algo Trade Pro" - an algorithmic trading company.
