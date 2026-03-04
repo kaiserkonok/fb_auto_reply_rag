@@ -11,3 +11,4 @@ ollama==0.3.3
 chromadb==0.5.23
 transformers>=4.30,<4.42
 tiktoken
+pytest

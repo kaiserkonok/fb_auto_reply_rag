@@ -60,14 +60,19 @@ class RAGSystem:
 
         try:
             memory = self._get_memory(user_id)
-            memory.save_context({"input": message}, {"output": ""})
+            memory_variables = memory.load_memory_variables({})
+            history_text = memory_variables.get("history", "")
+            summary_text = memory_variables.get("summary", "")
 
-            if not self.vector_store:
-                memory_variables = memory.load_memory_variables({})
-                history_text = memory_variables.get("history", "")
-                summary_text = memory_variables.get("summary", "")
+            context_section = ""
+            if self.vector_store:
+                docs = self.vector_store.similarity_search(message, k=3)
+                if docs:
+                    context_section = "\n\nRelevant information:\n" + "\n".join(
+                        f"- {doc.page_content[:200]}" for doc in docs
+                    )
 
-                prompt = f"""You are a helpful, natural conversational assistant.
+            prompt = f"""You are a helpful, natural conversational assistant.
 Respond like a human assistant in clear, friendly English.
 
 Conversation summary:
@@ -75,34 +80,18 @@ Conversation summary:
 
 Recent conversation:
 {history_text}
+{context_section}
 
 Human: {message}
 Assistant:"""
 
-                answer = str(self.llm.invoke(prompt)).strip()
-                if not answer:
-                    answer = "I am here. Tell me what you want to talk about."
-
-                memory.save_context({"input": message}, {"output": answer})
-
-                logger.info(f"Chat (no RAG) for user {user_id}: {message[:30]}...")
-                return {"response": answer}
-
-            from langchain.chains import ConversationalRetrievalChain
-
-            qa_chain = ConversationalRetrievalChain.from_llm(
-                llm=self.llm,
-                retriever=self.vector_store.as_retriever(),
-                memory=memory,
-                return_source_documents=True
-            )
-
-            result = qa_chain.invoke(message)
-            answer = result.get('answer', str(result))
+            answer = str(self.llm.invoke(prompt)).strip()
+            if not answer:
+                answer = "I am here. Tell me what you want to talk about."
 
             memory.save_context({"input": message}, {"output": answer})
 
-            logger.info(f"RAG query for user {user_id}: {message[:30]}...")
+            logger.info(f"Query for user {user_id}: {message[:30]}...")
             return {"response": answer}
 
         except Exception as e:
