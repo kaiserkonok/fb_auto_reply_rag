@@ -44,7 +44,7 @@ def init_memory_db():
 
 
 class RAGSystem:
-    def __init__(self, upload_folder='uploads', llm_model="qwen2.5:3b", embed_model="bge-m3:latest", max_token_limit=2000):
+    def __init__(self, upload_folder='uploads', llm_model="qwen3.5:2b", embed_model="bge-m3:latest", max_token_limit=2000):
         self.upload_folder = upload_folder
         self.embeddings = OllamaEmbeddings(model=embed_model)
         self.vector_store = None

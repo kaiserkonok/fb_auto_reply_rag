@@ -220,7 +220,7 @@ def create_app() -> Flask:
     init_memory_db()
     rag_system = RAGSystem(
         upload_folder=os.getenv("RAG_UPLOAD_FOLDER", "uploads"),
-        llm_model=os.getenv("RAG_LLM_MODEL", "qwen2.5:3b"),
+        llm_model=os.getenv("RAG_LLM_MODEL", "qwen3.5:2b"),
         max_token_limit=int(os.getenv("RAG_MAX_TOKEN_LIMIT", "2000"))
     )
 
