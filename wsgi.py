@@ -316,6 +316,21 @@ def create_app() -> Flask:
             logger.error(f"Reload error: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500
 
+    @flask_app.get("/stats")
+    def get_stats():
+        """Get chat memory statistics."""
+        try:
+            from chat_memory_db import get_stats, get_all_users
+            stats = get_stats()
+            users = get_all_users()
+            return jsonify({
+                "stats": stats,
+                "recent_users": users[:10]
+            }), 200
+        except Exception as e:
+            logger.error(f"Stats error: {e}")
+            return jsonify({"status": "error", "message": str(e)}), 500
+
     @flask_app.get("/cms")
     def cms():
         files = []

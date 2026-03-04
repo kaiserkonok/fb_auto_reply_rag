@@ -20,6 +20,17 @@ from langchain_community.vectorstores import Chroma
 from langchain_community.document_loaders import TextLoader, PyPDFLoader, Docx2txtLoader, CSVLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from chat_memory_db import (
+    init_db,
+    get_user_session,
+    save_message,
+    get_conversation_history,
+    save_summary,
+    get_summary,
+    cleanup_old_messages,
+    get_stats
+)
+
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s \033[96m%(name)s\033[0m \033[93m%(levelname)s\033[0m - %(message)s",
@@ -28,7 +39,8 @@ logger = logging.getLogger(__name__)
 
 
 def init_memory_db():
-    pass
+    """Initialize the chat memory database."""
+    init_db()
 
 
 class RAGSystem:
@@ -39,17 +51,83 @@ class RAGSystem:
         self.llm = OllamaLLM(model=llm_model, temperature=0.1)
         self.max_token_limit = max_token_limit
         self.user_memories = {}
+        self.user_memory_loaded = {}  # Track which users have memory loaded from DB
         logger.info(f"Initializing RAG system with {llm_model} (max_token_limit={max_token_limit})...")
+        
+        # Initialize database
+        init_db()
+        
+        # Log stats
+        stats = get_stats()
+        logger.info(f"Chat DB stats: {stats['total_users']} users, {stats['total_messages']} messages")
+        
         self.load_documents()
 
     def _get_memory(self, user_id):
+        """Get or create memory for a user, loading from DB if needed."""
         if user_id not in self.user_memories:
+            # Create new memory
             self.user_memories[user_id] = ConversationSummaryBufferMemory(
                 llm=self.llm,
                 max_token_limit=self.max_token_limit,
                 return_messages=True
             )
+            
+            # Load existing conversation from database
+            if user_id not in self.user_memory_loaded:
+                self._load_user_memory_from_db(user_id)
+                self.user_memory_loaded[user_id] = True
+        
         return self.user_memories[user_id]
+    
+    def _load_user_memory_from_db(self, user_id):
+        """Load user's conversation history from database."""
+        try:
+            # Load summary
+            summary = get_summary(user_id)
+            if summary:
+                # Set the summary in memory
+                self.user_memories[user_id].buffer = summary
+                logger.debug(f"Loaded summary for user {user_id}")
+            
+            # Load recent messages
+            history = get_conversation_history(user_id, limit=20)
+            
+            for msg in history:
+                if msg['role'] == 'human':
+                    self.user_memories[user_id].chat_memory.add_user_message(msg['content'])
+                elif msg['role'] == 'ai':
+                    self.user_memories[user_id].chat_memory.add_ai_message(msg['content'])
+            
+            logger.debug(f"Loaded {len(history)} messages for user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error loading memory from DB for user {user_id}: {e}")
+    
+    def _save_message_to_db(self, user_id, role, content):
+        """Save message to database."""
+        try:
+            save_message(user_id, role, content)
+            
+            # Periodic cleanup - keep last 100 messages per user
+            cleanup_old_messages(user_id, keep_last=100)
+            
+        except Exception as e:
+            logger.error(f"Error saving message to DB: {e}")
+    
+    def _save_summary_to_db(self, user_id):
+        """Save conversation summary to database."""
+        try:
+            memory = self.user_memories.get(user_id)
+            if memory:
+                # Get current summary from memory
+                memory_variables = memory.load_memory_variables({})
+                summary = memory_variables.get("summary", "")
+                if summary:
+                    save_summary(user_id, summary)
+                    logger.debug(f"Saved summary for user {user_id}")
+        except Exception as e:
+            logger.error(f"Error saving summary to DB: {e}")
     
     def reload(self):
         logger.info("Reloading knowledge base...")
@@ -141,7 +219,20 @@ Your answer (use only information from the documents):"""
             logger.debug(f"\n✅ RESPONSE: {answer[:200]}...")
             logger.debug(f"{'='*50}\n")
 
+            # Update in-memory memory
             memory.save_context({"input": message}, {"output": answer})
+            
+            # Save to database for persistence
+            self._save_message_to_db(user_id, "human", message)
+            self._save_message_to_db(user_id, "ai", answer)
+            
+            # Save summary periodically (every 10 messages)
+            try:
+                session = get_user_session(user_id)
+                if session and session.get('message_count', 0) % 10 == 0:
+                    self._save_summary_to_db(user_id)
+            except:
+                pass
 
             logger.info(f"Query for user {user_id}: {message[:30]}...")
             return {"response": answer}
