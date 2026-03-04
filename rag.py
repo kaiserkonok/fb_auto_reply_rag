@@ -186,8 +186,9 @@ class RAGSystem:
             # Build improved prompt
             prompt = f"""You are a helpful assistant for "Algo Trade Pro" - an algorithmic trading company.
 
-IMPORTANT: You must ONLY use the information provided in the "Relevant information" section below to answer questions. 
-If the information is not in the documents, say "I don't have that information" - do NOT make up answers.
+For greetings and casual conversation (like "hi", "hello", "how are you"), respond naturally and friendly - no need for documents.
+
+For questions about the company, services, pricing, or trading: Use the "Relevant information" section below if available. If the information is not in the documents, use your general knowledge about algorithmic trading to help - do NOT say "I don't have that information".
 
 Conversation summary from earlier:
 {summary_text}
@@ -197,11 +198,9 @@ Recent conversation:
 
 {context_section}
 
-Based ONLY on the information above, please answer this question from the user:
-
 User's question: {message}
 
-Your answer (use only information from the documents):"""
+Your friendly answer:"""
 
             logger.debug(f"\n{'='*50}")
             logger.debug(f"CONTEXT USED:")
