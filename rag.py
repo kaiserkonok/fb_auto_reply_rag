@@ -3,13 +3,9 @@ RAG Engine - Core retrieval and question answering system.
 """
 
 import os
-import sqlite3
-import json
 import logging
-from datetime import datetime
 
-from langchain_classic.chains import ConversationalRetrievalChain
-from langchain_classic.memory import ConversationBufferMemory
+from langchain.memory import ConversationSummaryBufferMemory
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.document_loaders import TextLoader, PyPDFLoader, Docx2txtLoader, CSVLoader
@@ -17,67 +13,34 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 logger = logging.getLogger(__name__)
 
-# Database for user memories
-MEMORY_DB = 'user_memories.db'
-
-
-def get_memory_db():
-    conn = sqlite3.connect(MEMORY_DB)
-    return conn
-
 
 def init_memory_db():
-    conn = get_memory_db()
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS user_memories (
-            user_id TEXT PRIMARY KEY,
-            history TEXT NOT NULL,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-
-def save_user_memory(user_id, history):
-    conn = get_memory_db()
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT OR REPLACE INTO user_memories (user_id, history, updated_at)
-        VALUES (?, ?, ?)
-    ''', (user_id, json.dumps(history), datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
-
-
-def load_user_memory(user_id):
-    if not user_id:
-        return []
-    conn = get_memory_db()
-    cursor = conn.cursor()
-    cursor.execute('SELECT history FROM user_memories WHERE user_id = ?', (user_id,))
-    result = cursor.fetchone()
-    conn.close()
-    if result:
-        return json.loads(result[0])
-    return []
+    pass
 
 
 class RAGSystem:
-    def __init__(self, upload_folder='uploads', llm_model="qwen2.5:3b", embed_model="bge-m3:latest"):
+    def __init__(self, upload_folder='uploads', llm_model="qwen2.5:3b", embed_model="bge-m3:latest", max_token_limit=2000):
         self.upload_folder = upload_folder
         self.embeddings = OllamaEmbeddings(model=embed_model)
         self.vector_store = None
         self.llm = OllamaLLM(model=llm_model, temperature=0.1)
-        logger.info(f"Initializing RAG system with {llm_model}...")
+        self.max_token_limit = max_token_limit
+        self.user_memories = {}
+        logger.info(f"Initializing RAG system with {llm_model} (max_token_limit={max_token_limit})...")
         self.load_documents()
-        self.initialize_chain()
+
+    def _get_memory(self, user_id):
+        if user_id not in self.user_memories:
+            self.user_memories[user_id] = ConversationSummaryBufferMemory(
+                llm=self.llm,
+                max_token_limit=self.max_token_limit,
+                return_messages=True
+            )
+        return self.user_memories[user_id]
     
     def reload(self):
         logger.info("Reloading knowledge base...")
         self.load_documents()
-        self.initialize_chain()
         logger.info("Knowledge base reloaded")
     
     def query(self, message, user_id=None):
@@ -86,88 +49,62 @@ class RAGSystem:
         
         Args:
             message: User message
-            user_id: If provided, loads/persists conversation memory in SQLite.
+            user_id: If provided, uses ConversationSummaryBufferMemory for conversation history.
                      If None, uses fresh memory (no persistence).
         """
         if not message:
             return {"error": "No message provided"}, 400
 
-        # Load user-specific memory from database (only if user_id provided)
-        history = load_user_memory(user_id) if user_id else []
+        if not user_id:
+            user_id = "web"
 
-        # Fallback to normal chat if no RAG documents are available.
-        if not self.vector_store:
-            try:
-                prompt_parts = [
-                    "You are a helpful, natural conversational assistant.",
-                    "Respond like a human assistant in clear, friendly English.",
-                ]
+        try:
+            memory = self._get_memory(user_id)
+            memory.save_context({"input": message}, {"output": ""})
 
-                for msg in history[-10:]:
-                    if msg.get('type') == 'human':
-                        prompt_parts.append(f"User: {msg.get('content', '')}")
-                    elif msg.get('type') == 'ai':
-                        prompt_parts.append(f"Assistant: {msg.get('content', '')}")
+            if not self.vector_store:
+                memory_variables = memory.load_memory_variables({})
+                history_text = memory_variables.get("history", "")
+                summary_text = memory_variables.get("summary", "")
 
-                prompt_parts.append(f"User: {message}")
-                prompt_parts.append("Assistant:")
-                prompt = "\n".join(prompt_parts)
+                prompt = f"""You are a helpful, natural conversational assistant.
+Respond like a human assistant in clear, friendly English.
+
+Conversation summary:
+{summary_text}
+
+Recent conversation:
+{history_text}
+
+Human: {message}
+Assistant:"""
 
                 answer = str(self.llm.invoke(prompt)).strip()
                 if not answer:
                     answer = "I am here. Tell me what you want to talk about."
 
-                if user_id:
-                    updated_history = [
-                        {"type": "human", "content": message},
-                        {"type": "ai", "content": answer}
-                    ]
-                    save_user_memory(user_id, history + updated_history)
+                memory.save_context({"input": message}, {"output": answer})
 
-                logger.info(f"Chat fallback used for user {user_id or 'web'}: {message[:30]}...")
+                logger.info(f"Chat (no RAG) for user {user_id}: {message[:30]}...")
                 return {"response": answer}
-            except Exception as e:
-                logger.error(f"Fallback chat error: {e}")
-                return {"response": f"Error processing your query: {str(e)}"}, 500
 
-        try:
-            # Create memory with history
-            memory = ConversationBufferMemory(
-                memory_key="chat_history",
-                output_key="answer",
-                return_messages=True
-            )
-            
-            # Load history into memory
-            for msg in history:
-                if msg['type'] == 'human':
-                    memory.chat_memory.add_user_message(msg['content'])
-                elif msg['type'] == 'ai':
-                    memory.chat_memory.add_ai_message(msg['content'])
-            
-            # Create chain with user memory
+            from langchain.chains import ConversationalRetrievalChain
+
             qa_chain = ConversationalRetrievalChain.from_llm(
                 llm=self.llm,
                 retriever=self.vector_store.as_retriever(),
                 memory=memory,
-                return_source_documents=True,
-                verbose=True
+                return_source_documents=True
             )
-            
-            # Query
+
             result = qa_chain.invoke(message)
-            
-            # Save updated memory to database (only if user_id provided)
-            if user_id:
-                updated_history = [
-                    {"type": "human", "content": message},
-                    {"type": "ai", "content": result.get('answer', str(result))}
-                ]
-                save_user_memory(user_id, history + updated_history)
-            
-            logger.info(f"Query processed for user {user_id or 'web'}: {message[:30]}...")
-            return {"response": result.get('answer', str(result))}
-            
+            answer = result.get('answer', str(result))
+
+            memory.save_context({"input": message}, {"output": answer})
+
+            logger.info(f"RAG query for user {user_id}: {message[:30]}...")
+            return {"response": answer}
+
         except Exception as e:
             logger.error(f"Query error: {e}")
             return {"response": f"Error processing your query: {str(e)}"}, 500
@@ -223,7 +160,3 @@ class RAGSystem:
             self.vector_store = Chroma.from_documents(docs, self.embeddings)
         
         return documents
-    
-    def initialize_chain(self):
-        # Chain is created per-query with user memory
-        pass
