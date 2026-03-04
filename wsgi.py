@@ -5,12 +5,14 @@ import logging
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import requests
 from dotenv import load_dotenv
-from flask import Flask, jsonify, redirect, render_template_string, request, url_for
+from flask import Flask, jsonify, redirect, render_template, render_template_string, request, url_for, flash, send_from_directory
+from werkzeug.utils import secure_filename
 
 from rag import RAGSystem, init_memory_db
 from database import Database
@@ -229,6 +231,172 @@ def create_app() -> Flask:
         "rag_system": rag_system,
     }
     pool = ThreadPoolExecutor(max_workers=8)
+
+    flask_app.secret_key = 'supersecretkey'
+    flask_app.config['UPLOAD_FOLDER'] = os.getenv("RAG_UPLOAD_FOLDER", "uploads")
+    flask_app.config['ALLOWED_EXTENSIONS'] = {'txt', 'pdf', 'docx', 'md', 'pptx', 'csv'}
+
+    if not os.path.exists(flask_app.config['UPLOAD_FOLDER']):
+        os.makedirs(flask_app.config['UPLOAD_FOLDER'])
+
+    def allowed_file(filename):
+        return '.' in filename and filename.rsplit('.', 1)[1].lower() in flask_app.config['ALLOWED_EXTENSIONS']
+
+    @flask_app.route('/upload', methods=['POST'])
+    def upload_file():
+        if 'file' not in request.files and 'files[]' not in request.files:
+            return jsonify({"error": "No file part"}), 400
+        
+        files = request.files.getlist('files[]')
+        
+        if files and files[0].filename:
+            for file in files:
+                if file and allowed_file(file.filename):
+                    filename = secure_filename(file.filename or "")
+                    if filename:
+                        filepath = os.path.join(flask_app.config['UPLOAD_FOLDER'], filename)
+                        file.save(filepath)
+            return jsonify({"status": "success", "message": f"Uploaded {len([f for f in files if f.filename])} files"})
+        
+        file = request.files.get('file')
+        if file.filename == '':
+            return jsonify({"error": "No selected file"}), 400
+        
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename or "")
+            filepath = os.path.join(flask_app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+            return jsonify({"status": "success", "message": "File uploaded successfully"})
+        else:
+            return jsonify({"error": "Allowed file types are txt, pdf, docx, csv"}), 400
+
+    @flask_app.route('/upload-folder', methods=['POST'])
+    def upload_folder():
+        files = request.files.getlist('files')
+        
+        if not files or not files[0].filename:
+            return jsonify({"error": "No files selected"}), 400
+        
+        uploaded_count = 0
+        for file in files:
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename or "")
+                if filename:
+                    filepath = os.path.join(flask_app.config['UPLOAD_FOLDER'], filename)
+                    file.save(filepath)
+                    uploaded_count += 1
+        
+        return jsonify({"status": "success", "message": f"Uploaded {uploaded_count} files"})
+
+    @flask_app.route('/download/<filename>')
+    def download_file(filename):
+        return send_from_directory(flask_app.config['UPLOAD_FOLDER'], filename)
+
+    @flask_app.route('/delete/<name>')
+    def delete_file(name):
+        filename = secure_filename(name)
+        filepath = os.path.join(flask_app.config['UPLOAD_FOLDER'], filename)
+        
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            return jsonify({"status": "success", "message": "File deleted successfully"})
+        return jsonify({"error": "File not found"}), 404
+
+    @flask_app.route('/reload', methods=['POST'])
+    def reload_knowledge_base():
+        try:
+            rag_system.reload()
+            return jsonify({"status": "success", "message": "Knowledge base reloaded"})
+        except Exception as e:
+            logger.error(f"Reload error: {e}")
+            return jsonify({"status": "error", "message": str(e)}), 500
+
+    @flask_app.get("/cms")
+    def cms():
+        files = []
+        upload_folder = flask_app.config['UPLOAD_FOLDER']
+        if os.path.exists(upload_folder):
+            for f in os.listdir(upload_folder):
+                filepath = os.path.join(upload_folder, f)
+                if os.path.isfile(filepath):
+                    files.append({
+                        'name': f,
+                        'size': os.path.getsize(filepath),
+                        'modified': datetime.fromtimestamp(os.path.getmtime(filepath)).strftime('%Y-%m-%d %H:%M:%S')
+                    })
+        files.sort(key=lambda x: x['modified'], reverse=True)
+        
+        html = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Document Management</title>
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+                h1 { color: #333; }
+                .upload-section { background: #f5f5f5; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+                .btn { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; }
+                .btn-primary { background: #007bff; color: white; }
+                .btn-danger { background: #dc3545; color: white; }
+                .btn-success { background: #28a745; color: white; }
+                table { width: 100%; border-collapse: collapse; }
+                th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+                th { background: #f8f9fa; }
+                .file-size { color: #666; font-size: 0.9em; }
+            </style>
+        </head>
+        <body>
+            <h1>Document Management</h1>
+            
+            <div class="upload-section">
+                <h3>Upload Files</h3>
+                <form action="/upload" method="post" enctype="multipart/form-data" style="margin-bottom: 15px;">
+                    <input type="file" name="file" multiple>
+                    <button type="submit" class="btn btn-primary">Upload</button>
+                </form>
+                <form action="/upload-folder" method="post" enctype="multipart/form-data" style="margin-bottom: 15px;">
+                    <input type="file" name="files" multiple>
+                    <button type="submit" class="btn btn-primary">Upload Multiple</button>
+                </form>
+                <form action="/reload" method="post">
+                    <button type="submit" class="btn btn-success">Reload Knowledge Base</button>
+                </form>
+            </div>
+            
+            <h3>Uploaded Documents</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Size</th>
+                        <th>Modified</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for file in documents %}
+                    <tr>
+                        <td>{{ file.name }}</td>
+                        <td class="file-size">{{ file.size }} bytes</td>
+                        <td>{{ file.modified }}</td>
+                        <td>
+                            <a href="/download/{{ file.name }}" class="btn btn-primary" style="font-size: 0.8em;">Download</a>
+                            <a href="/delete/{{ file.name }}" class="btn btn-danger" style="font-size: 0.8em;">Delete</a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4">No documents uploaded yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            
+            <p><a href="/">Back to Chat</a></p>
+        </body>
+        </html>
+        """
+        return render_template_string(html, documents=files), 200
 
     flask_app.extensions["cfg"] = cfg
     flask_app.extensions["worker_pool"] = pool
@@ -492,7 +660,7 @@ def create_app() -> Flask:
                         <button id="chat-send" type="submit">Send</button>
                     </form>
                 </section>
-                <p class="footer">Built for local + Render workflow.</p>
+                <p class="footer">Built for local + Render workflow. | <a href="/cms">Document Management</a></p>
             </div>
             <script>
                 (function () {
