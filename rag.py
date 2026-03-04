@@ -5,6 +5,14 @@ RAG Engine - Core retrieval and question answering system.
 import os
 import logging
 import json
+import warnings
+
+# Suppress LangChain deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message=".*Please see the migration guide.*")
+
+# Suppress ChromaDB telemetry warnings
+logging.getLogger("chromadb").setLevel(logging.ERROR)
 
 from langchain.memory import ConversationSummaryBufferMemory
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
@@ -73,42 +81,54 @@ class RAGSystem:
             logger.debug(f"USER: {message}")
             logger.debug(f"{'='*50}")
 
-            # Retrieval
+            # Retrieval - using MMR for better diversity
             context_section = ""
             retrieved_docs = []
             if self.vector_store:
                 logger.debug(f"\n🔍 SEARCHING for: '{message}'")
-                docs = self.vector_store.similarity_search(message, k=3)
+                
+                # Use MMR (Maximum Marginal Relevance) for better results
+                docs = self.vector_store.max_marginal_relevance_search(
+                    message, 
+                    k=5,  # Increased from 3 to 5
+                    fetch_k=10  # Fetch more for diversity
+                )
                 logger.debug(f"📄 FOUND {len(docs)} documents")
                 
                 for i, doc in enumerate(docs):
                     logger.debug(f"\n--- Document {i+1} ---")
-                    logger.debug(doc.page_content[:300])
-                    retrieved_docs.append(doc.page_content[:200])
+                    logger.debug(doc.page_content[:500])
+                    retrieved_docs.append(doc.page_content)
                 
                 if docs:
-                    context_section = "\n\nRelevant information:\n" + "\n".join(
-                        f"- {doc.page_content[:200]}" for doc in docs
+                    context_section = "\n\nRelevant information from documents:\n" + "\n".join(
+                        f"[Document {i+1}]:\n{doc.page_content}" for i, doc in enumerate(docs)
                     )
 
-            # Build prompt
-            prompt = f"""You are a helpful, natural conversational assistant.
-Respond like a human assistant in clear, friendly English.
+            # Build improved prompt
+            prompt = f"""You are a helpful assistant for "Algo Trade Pro" - an algorithmic trading company.
 
-Conversation summary:
+IMPORTANT: You must ONLY use the information provided in the "Relevant information" section below to answer questions. 
+If the information is not in the documents, say "I don't have that information" - do NOT make up answers.
+
+Conversation summary from earlier:
 {summary_text}
 
 Recent conversation:
 {history_text}
+
 {context_section}
 
-Human: {message}
-Assistant:"""
+Based ONLY on the information above, please answer this question from the user:
+
+User's question: {message}
+
+Your answer (use only information from the documents):"""
 
             logger.debug(f"\n{'='*50}")
             logger.debug(f"CONTEXT USED:")
-            logger.debug(f"Summary: {summary_text[:200] if summary_text else 'None'}")
-            logger.debug(f"History: {history_text[:200] if history_text else 'None'}")
+            logger.debug(f"Summary: {summary_text[:300] if summary_text else 'None'}")
+            logger.debug(f"History: {history_text[:300] if history_text else 'None'}")
             logger.debug(f"Retrieved: {len(retrieved_docs)} docs")
             logger.debug(f"{'='*50}")
 
@@ -151,7 +171,7 @@ Assistant:"""
                 
                 try:
                     if filename.endswith('.txt'):
-                        loader = TextLoader(filepath)
+                        loader = TextLoader(filepath, encoding='utf-8')
                         docs = loader.load()
                         documents.extend(docs)
                         logger.info(f"Loaded {filename}")
@@ -174,12 +194,21 @@ Assistant:"""
                     logger.error(f"Error loading {filename}: {e}")
         
         if documents:
+            # Improved chunking for better retrieval
             text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=200
+                chunk_size=500,      # Smaller chunks for more precise retrieval
+                chunk_overlap=100,    # Less overlap
+                separators=["\n\n", "\n", ". ", ", ", " "]
             )
             
             docs = text_splitter.split_documents(documents)
-            self.vector_store = Chroma.from_documents(docs, self.embeddings)
+            logger.info(f"Split into {len(docs)} chunks")
+            
+            self.vector_store = Chroma.from_documents(
+                docs, 
+                self.embeddings,
+                collection_name="rag-store"
+            )
+            logger.info(f"Vector store created with {len(docs)} documents")
         
         return documents
