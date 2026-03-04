@@ -488,7 +488,7 @@ def create_app() -> Flask:
                         <div class="bubble bot">Ready. Ask me anything to verify your reply pipeline.</div>
                     </div>
                     <form class="chat-form" id="chat-form">
-                        <input id="chat-input" type="text" maxlength="500" placeholder="Type a message..." required />
+                        <input id="chat-input" type="text" maxlength="500" placeholder="Type a message..." required autofocus />
                         <button id="chat-send" type="submit">Send</button>
                     </form>
                 </section>
