@@ -27,7 +27,12 @@ def _setup_logging() -> None:
     logging.basicConfig(
         level=getattr(logging, level, logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+        force=True,
     )
+    
+    # Enable verbose logging for better visibility
+    logging.getLogger("werkzeug").setLevel(logging.INFO)
+    logging.getLogger("rag").setLevel(logging.DEBUG)
 
 
 def _verify_signature(raw_body: bytes, app_secret: str, signature_header: str) -> bool:

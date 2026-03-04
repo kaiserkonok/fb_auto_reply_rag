@@ -4,6 +4,7 @@ RAG Engine - Core retrieval and question answering system.
 
 import os
 import logging
+import json
 
 from langchain.memory import ConversationSummaryBufferMemory
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
@@ -11,6 +12,10 @@ from langchain_community.vectorstores import Chroma
 from langchain_community.document_loaders import TextLoader, PyPDFLoader, Docx2txtLoader, CSVLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s \033[96m%(name)s\033[0m \033[93m%(levelname)s\033[0m - %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 
@@ -64,14 +69,29 @@ class RAGSystem:
             history_text = memory_variables.get("history", "")
             summary_text = memory_variables.get("summary", "")
 
+            logger.debug(f"\n{'='*50}")
+            logger.debug(f"USER: {message}")
+            logger.debug(f"{'='*50}")
+
+            # Retrieval
             context_section = ""
+            retrieved_docs = []
             if self.vector_store:
+                logger.debug(f"\n🔍 SEARCHING for: '{message}'")
                 docs = self.vector_store.similarity_search(message, k=3)
+                logger.debug(f"📄 FOUND {len(docs)} documents")
+                
+                for i, doc in enumerate(docs):
+                    logger.debug(f"\n--- Document {i+1} ---")
+                    logger.debug(doc.page_content[:300])
+                    retrieved_docs.append(doc.page_content[:200])
+                
                 if docs:
                     context_section = "\n\nRelevant information:\n" + "\n".join(
                         f"- {doc.page_content[:200]}" for doc in docs
                     )
 
+            # Build prompt
             prompt = f"""You are a helpful, natural conversational assistant.
 Respond like a human assistant in clear, friendly English.
 
@@ -85,9 +105,21 @@ Recent conversation:
 Human: {message}
 Assistant:"""
 
+            logger.debug(f"\n{'='*50}")
+            logger.debug(f"CONTEXT USED:")
+            logger.debug(f"Summary: {summary_text[:200] if summary_text else 'None'}")
+            logger.debug(f"History: {history_text[:200] if history_text else 'None'}")
+            logger.debug(f"Retrieved: {len(retrieved_docs)} docs")
+            logger.debug(f"{'='*50}")
+
+            # Generate response
+            logger.debug(f"\n🤖 GENERATING response...")
             answer = str(self.llm.invoke(prompt)).strip()
             if not answer:
                 answer = "I am here. Tell me what you want to talk about."
+
+            logger.debug(f"\n✅ RESPONSE: {answer[:200]}...")
+            logger.debug(f"{'='*50}\n")
 
             memory.save_context({"input": message}, {"output": answer})
 
@@ -96,6 +128,8 @@ Assistant:"""
 
         except Exception as e:
             logger.error(f"Query error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return {"response": f"Error processing your query: {str(e)}"}, 500
     
     def load_documents(self):
