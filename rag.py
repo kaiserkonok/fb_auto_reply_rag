@@ -31,6 +31,7 @@ warnings.filterwarnings("ignore", message=".*langchain.*")
 
 # Suppress ChromaDB telemetry warnings
 logging.getLogger("chromadb").setLevel(logging.ERROR)
+logging.getLogger("chromadb.telemetry").setLevel(logging.ERROR)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
@@ -212,24 +213,25 @@ class RAGSystem:
                         f"• {doc.page_content[:200]}" for doc in docs
                     )
 
-            # Build improved prompt
-            prompt = f"""You are a helpful assistant for "Algo Trade Pro" - an algorithmic trading company.
+            # Build prompt
+            prompt = f"""You are a friendly assistant for Algo Trade Pro, an algorithmic trading company.
 
-For greetings and casual conversation (like "hi", "hello", "how are you"), respond naturally and friendly - no need for documents.
+You help users with questions about trading, services, pricing, and company info.
 
-For questions about the company, services, pricing, or trading: Use the "Relevant information" section below if available. If the information is not in the documents, use your general knowledge about algorithmic trading to help - do NOT say "I don't have that information".
+If the user greets you (hi, hello, hey), just respond naturally and warmly.
 
-Conversation summary from earlier:
-{summary_text}
+When you know the answer, give it confidently - don't add disclaimers like "based on the documents" or "in the information provided".
+
+If you truly don't know something, say so simply.
 
 Recent conversation:
 {history_text}
 
 {context_section}
 
-User's question: {message}
+User: {message}
 
-Your friendly answer:"""
+Your response:"""
 
             logger.debug(f"────────────────────────────────────────────")
             logger.debug(f"  📊 CONTEXT:")
