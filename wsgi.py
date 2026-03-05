@@ -604,13 +604,19 @@ def create_app() -> Flask:
                 }
                 .bubble.user {
                     align-self: flex-end;
-                    border: 1px solid rgba(233, 127, 47, 0.35);
-                    background: rgba(233, 127, 47, 0.12);
+                    border: 1px solid #e67e22;
+                    background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+                    color: white;
+                    font-weight: 500;
+                    box-shadow: 0 2px 8px rgba(230, 126, 34, 0.3);
                 }
                 .bubble.bot {
                     align-self: flex-start;
-                    border: 1px solid rgba(16, 35, 44, 0.14);
-                    background: rgba(15, 142, 138, 0.08);
+                    border: 1px solid #9b59b6;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    font-weight: 500;
+                    box-shadow: 0 2px 12px rgba(102, 126, 234, 0.4);
                 }
                 .chat-form {
                     margin-top: 12px;
