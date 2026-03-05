@@ -191,15 +191,10 @@ class RAGSystem:
             logger.debug(f"  👤 USER: {message}")
             logger.debug(f"────────────────────────────────────────────")
 
-            # Check if message needs RAG (not a simple greeting/casual message)
-            message_lower = message.lower().strip()
-            simple_queries = ['hi', 'hello', 'hey', 'ok', 'thanks', 'thank you', 'good', 'nice', 'cool', 'okay', 'sure', 'yes', 'no']
-            needs_rag = not any(message_lower == q or message_lower.startswith(q + ' ') for q in simple_queries)
-
-            # Retrieval - using MMR for better diversity (only if needed)
+            # Retrieval - only when needed (LLM handles what needs RAG via prompt)
             context_section = ""
             retrieved_docs = []
-            if self.vector_store and needs_rag:
+            if self.vector_store:
                 logger.debug(f"  🔍 Searching: '{message}'")
                 docs = self.vector_store.max_marginal_relevance_search(
                     message, 
@@ -216,8 +211,6 @@ class RAGSystem:
                     context_section = "\n\n📚 Relevant information:\n" + "\n".join(
                         f"• {doc.page_content[:200]}" for doc in docs
                     )
-            else:
-                logger.debug(f"  ⏭️  Skipping RAG (simple message)")
 
             # Build improved prompt
             prompt = f"""You are a helpful assistant for "Algo Trade Pro" - an algorithmic trading company.
