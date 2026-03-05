@@ -29,9 +29,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", message=".*Please see the migration guide.*")
 warnings.filterwarnings("ignore", message=".*langchain.*")
 
-# Suppress ChromaDB telemetry warnings
-logging.getLogger("chromadb").setLevel(logging.ERROR)
-logging.getLogger("chromadb.telemetry").setLevel(logging.ERROR)
+# Suppress unnecessary library warnings
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
@@ -53,9 +51,10 @@ for handler in logging.root.handlers:
 
 from langchain.memory import ConversationSummaryBufferMemory
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import TextLoader, PyPDFLoader, Docx2txtLoader, CSVLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.schema import Document
 
 from chat_memory_db import (
     init_db,
@@ -197,11 +196,7 @@ class RAGSystem:
             retrieved_docs = []
             if self.vector_store:
                 logger.debug(f"  🔍 Searching: '{message}'")
-                docs = self.vector_store.max_marginal_relevance_search(
-                    message, 
-                    k=5,
-                    fetch_k=10
-                )
+                docs = self.vector_store.similarity_search(message, k=5)
                 logger.debug(f"  📄 Found {len(docs)} documents")
                 
                 for i, doc in enumerate(docs):
@@ -275,12 +270,7 @@ Your response:"""
     
     def load_documents(self):
         # Clear existing vector store first
-        if self.vector_store:
-            try:
-                self.vector_store.delete_collection()
-            except:
-                pass
-            self.vector_store = None
+        self.vector_store = None
         
         if not os.path.exists(self.upload_folder):
             return []
@@ -317,19 +307,16 @@ Your response:"""
         if documents:
             # Improved chunking for better retrieval
             text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=500,      # Smaller chunks for more precise retrieval
-                chunk_overlap=100,    # Less overlap
+                chunk_size=500,
+                chunk_overlap=100,
                 separators=["\n\n", "\n", ". ", ", ", " "]
             )
             
             docs = text_splitter.split_documents(documents)
             logger.info(f"Split into {len(docs)} chunks")
             
-            self.vector_store = Chroma.from_documents(
-                docs, 
-                self.embeddings,
-                collection_name="rag-store"
-            )
+            # Use FAISS instead of ChromaDB
+            self.vector_store = FAISS.from_documents(docs, self.embeddings)
             logger.info(f"Vector store created with {len(docs)} documents")
         
         return documents
