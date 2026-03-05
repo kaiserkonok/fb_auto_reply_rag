@@ -6,13 +6,49 @@ import os
 import logging
 import json
 import warnings
+import sys
+
+# Color codes for pretty logging
+class ColoredFormatter(logging.Formatter):
+    COLORS = {
+        'DEBUG': '\033[96m',    # Cyan
+        'INFO': '\033[92m',     # Green
+        'WARNING': '\033[93m',  # Yellow
+        'ERROR': '\033[91m',    # Red
+        'RESET': '\033[0m',
+    }
+    
+    def format(self, record):
+        levelname = record.levelname
+        if levelname in self.COLORS:
+            record.levelname = f"{self.COLORS[levelname]}{levelname}{self.COLORS['RESET']}"
+        return super().format(record)
 
 # Suppress LangChain deprecation warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", message=".*Please see the migration guide.*")
+warnings.filterwarnings("ignore", message=".*langchain.*")
 
 # Suppress ChromaDB telemetry warnings
 logging.getLogger("chromadb").setLevel(logging.ERROR)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+# Configure root logger with colors
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s │ %(levelname)s │ %(name)s │ %(message)s',
+    datefmt='%H:%M:%S',
+    stream=sys.stdout
+)
+
+# Apply colored formatter to handlers
+for handler in logging.root.handlers:
+    handler.setFormatter(ColoredFormatter(
+        '%(asctime)s │ %(levelname)s │ %(name)s │ %(message)s',
+        datefmt='%H:%M:%S'
+    ))
 
 from langchain.memory import ConversationSummaryBufferMemory
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
@@ -31,11 +67,7 @@ from chat_memory_db import (
     get_stats
 )
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s \033[96m%(name)s\033[0m \033[93m%(levelname)s\033[0m - %(message)s",
-)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("rag")
 
 
 def init_memory_db():
@@ -155,9 +187,9 @@ class RAGSystem:
             history_text = memory_variables.get("history", "")
             summary_text = memory_variables.get("summary", "")
 
-            logger.debug(f"\n{'='*50}")
-            logger.debug(f"USER: {message}")
-            logger.debug(f"{'='*50}")
+            logger.debug(f"────────────────────────────────────────────")
+            logger.debug(f"  👤 USER: {message}")
+            logger.debug(f"────────────────────────────────────────────")
 
             # Check if message needs RAG (not a simple greeting/casual message)
             message_lower = message.lower().strip()
@@ -168,27 +200,24 @@ class RAGSystem:
             context_section = ""
             retrieved_docs = []
             if self.vector_store and needs_rag:
-                logger.debug(f"\n🔍 SEARCHING for: '{message}'")
-                
-                # Use MMR (Maximum Marginal Relevance) for better results
+                logger.debug(f"  🔍 Searching: '{message}'")
                 docs = self.vector_store.max_marginal_relevance_search(
                     message, 
                     k=5,
                     fetch_k=10
                 )
-                logger.debug(f"📄 FOUND {len(docs)} documents")
+                logger.debug(f"  📄 Found {len(docs)} documents")
                 
                 for i, doc in enumerate(docs):
-                    logger.debug(f"\n--- Document {i+1} ---")
-                    logger.debug(doc.page_content[:500])
-                    retrieved_docs.append(doc.page_content)
+                    logger.debug(f"  ──── Document {i+1} ────")
+                    logger.debug(f"  {doc.page_content[:300]}...")
                 
                 if docs:
-                    context_section = "\n\nRelevant information from documents:\n" + "\n".join(
-                        f"[Document {i+1}]:\n{doc.page_content}" for i, doc in enumerate(docs)
+                    context_section = "\n\n📚 Relevant information:\n" + "\n".join(
+                        f"• {doc.page_content[:200]}" for doc in docs
                     )
             else:
-                logger.debug(f"⏭️ SKIPPING RAG for simple message")
+                logger.debug(f"  ⏭️  Skipping RAG (simple message)")
 
             # Build improved prompt
             prompt = f"""You are a helpful assistant for "Algo Trade Pro" - an algorithmic trading company.
@@ -209,21 +238,21 @@ User's question: {message}
 
 Your friendly answer:"""
 
-            logger.debug(f"\n{'='*50}")
-            logger.debug(f"CONTEXT USED:")
-            logger.debug(f"Summary: {summary_text[:300] if summary_text else 'None'}")
-            logger.debug(f"History: {history_text[:300] if history_text else 'None'}")
-            logger.debug(f"Retrieved: {len(retrieved_docs)} docs")
-            logger.debug(f"{'='*50}")
+            logger.debug(f"────────────────────────────────────────────")
+            logger.debug(f"  📊 CONTEXT:")
+            logger.debug(f"     Summary: {summary_text[:150] if summary_text else 'None'}")
+            logger.debug(f"     History: {history_text[:150] if history_text else 'None'}")
+            logger.debug(f"     Docs: {len(retrieved_docs)} retrieved")
+            logger.debug(f"────────────────────────────────────────────")
 
             # Generate response
-            logger.debug(f"\n🤖 GENERATING response...")
+            logger.debug(f"  ⚡ Generating response...")
             answer = str(self.llm.invoke(prompt)).strip()
             if not answer:
                 answer = "I am here. Tell me what you want to talk about."
 
-            logger.debug(f"\n✅ RESPONSE: {answer[:200]}...")
-            logger.debug(f"{'='*50}\n")
+            logger.debug(f"  ✅ Response: {answer[:150]}...")
+            logger.debug(f"────────────────────────────────────────────\n")
 
             # Update in-memory memory
             memory.save_context({"input": message}, {"output": answer})
