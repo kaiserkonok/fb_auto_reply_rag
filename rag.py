@@ -402,15 +402,19 @@ Your response:"""
             print_step("Response ready", f"Length: {len(answer)} chars", "success")
 
             memory.save_context({"input": message}, {"output": answer})
-            self._save_message_to_db(user_id, "human", message)
-            self._save_message_to_db(user_id, "ai", answer)
             
-            try:
-                session = get_user_session(user_id)
-                if session and session.get('message_count', 0) % 10 == 0:
-                    self._save_summary_to_db(user_id)
-            except:
-                pass
+            # Only save to DB for real users (not test/homepage users)
+            is_test_user = user_id in ("homepage-user", "web") or user_id.startswith("test")
+            if not is_test_user:
+                self._save_message_to_db(user_id, "human", message)
+                self._save_message_to_db(user_id, "ai", answer)
+                
+                try:
+                    session = get_user_session(user_id)
+                    if session and session.get('message_count', 0) % 10 == 0:
+                        self._save_summary_to_db(user_id)
+                except:
+                    pass
 
             print_rule("green")
             print(f"✅ Query complete for {user_id}\n")
