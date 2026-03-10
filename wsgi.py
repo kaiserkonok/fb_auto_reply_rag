@@ -775,18 +775,8 @@ def create_app() -> Flask:
             except Exception:
                 pass
 
-        try:
-            rag_system = cfg["rag_system"]
-            result = rag_system.query(message=message, user_id=sender_id)
-            if isinstance(result, tuple):
-                reply = result[0].get("response", "Sorry, I couldn't process that.")
-            else:
-                reply = result.get("response", "Sorry, I couldn't process that.")
-            return jsonify({"reply": reply}), 200
-        except Exception:
-            logger.exception("RAG processing failed; falling back to local bot.")
-            reply = _forward_to_local_bot(sender_id, message, cfg)
-            return jsonify({"reply": reply}), 200
+        reply = _forward_to_local_bot(sender_id, message, cfg)
+        return jsonify({"reply": reply}), 200
 
     @flask_app.get("/privacy-policy")
     @flask_app.get("/privacy")
