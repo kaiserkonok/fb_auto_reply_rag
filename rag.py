@@ -202,12 +202,12 @@ def print_files(loaded_files: list):
     console.print(table)
 
 
-from langchain.memory import ConversationSummaryBufferMemory
+from langchain_classic.memory import ConversationSummaryBufferMemory
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import TextLoader, PyPDFLoader, Docx2txtLoader, CSVLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 warnings.filterwarnings("ignore")
 
