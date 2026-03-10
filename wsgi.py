@@ -758,6 +758,23 @@ def create_app() -> Flask:
         if not message:
             return jsonify({"error": "message is required"}), 400
 
+        ngrok_url = cfg["config_store"].get_ngrok_base_url()
+        if not ngrok_url:
+            ngrok_url = os.getenv("LOCAL_FUN_BOT_URL", "").strip()
+
+        if ngrok_url:
+            try:
+                resp = requests.post(
+                    f"{ngrok_url.rstrip('/')}/chat/reply",
+                    json={"sender_id": sender_id, "message": message},
+                    timeout=30,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return jsonify({"reply": data.get("reply", "Sorry, I couldn't process that.")}), 200
+            except Exception:
+                pass
+
         try:
             rag_system = cfg["rag_system"]
             result = rag_system.query(message=message, user_id=sender_id)
