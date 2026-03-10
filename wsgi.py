@@ -767,8 +767,9 @@ def create_app() -> Flask:
                 reply = result.get("response", "Sorry, I couldn't process that.")
             return jsonify({"reply": reply}), 200
         except Exception:
-            logger.exception("Homepage chat reply failed.")
-            return jsonify({"error": "Internal server error"}), 500
+            logger.exception("RAG processing failed; falling back to local bot.")
+            reply = _forward_to_local_bot(sender_id, message, cfg)
+            return jsonify({"reply": reply}), 200
 
     @flask_app.get("/privacy-policy")
     @flask_app.get("/privacy")
